@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Luminote Summarizer</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">
+        <span class="brand-mark"></span>
+        <span>Luminote Summarizer</span>
+      </a>
+      <nav aria-label="Page navigation">
+        <a href="#summarizer">Summarizer</a>
+        <a href="#about">About</a>
+        <a href="#creators">Creators</a>
+      </nav>
+    </header>
+
+    <main class="app-shell">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">College AI Project</p>
+          <h1>YouTube Video Summarizer</h1>
+          <p class="subtitle">Generate clean study notes from YouTube videos using free transcript extraction and local AI summarization.</p>
+          <div class="hero-badges" aria-label="Project highlights">
+            <span>Free tools</span>
+            <span>FastAPI backend</span>
+            <span>Local model ready</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="summarizer" class="tool-panel" aria-label="Summarizer form">
+        <div class="section-heading">
+          <p class="eyebrow">Generate Summary</p>
+          <h2>Paste a YouTube URL</h2>
+          <p>The app fetches available captions, summarizes the transcript, and organizes the result for quick revision.</p>
+        </div>
+
+        <form id="summaryForm" class="input-row">
+          <label class="url-field">
+            <span>YouTube URL</span>
+            <input
+              id="youtubeUrl"
+              name="url"
+              type="url"
+              placeholder="https://www.youtube.com/watch?v=..."
+              required
+            />
+          </label>
+          <label class="language-field">
+            <span>Lang</span>
+            <input id="language" name="language" value="en" maxlength="8" />
+          </label>
+          <button id="submitButton" type="submit">Generate Summary</button>
+        </form>
+        <p id="statusMessage" class="status" role="status"></p>
+      </section>
+
+      <section id="loadingPanel" class="loading-panel hidden" aria-live="polite">
+        <div class="loader"></div>
+        <div>
+          <h2>Generating Summary...</h2>
+          <p>Fetching transcript, selecting key ideas, and preparing a neat summary.</p>
+        </div>
+      </section>
+
+      <section id="resultPanel" class="results hidden" aria-live="polite">
+        <div class="result-header">
+          <div>
+            <p class="eyebrow">Generated Output</p>
+            <h2>Video Summary Notes</h2>
+          </div>
+          <span id="wordCount" class="word-count">0 words</span>
+        </div>
+
+        <div class="meta-grid">
+          <div>
+            <span>Video ID</span>
+            <strong id="videoId">-</strong>
+          </div>
+          <div>
+            <span>Transcript</span>
+            <strong id="source">-</strong>
+          </div>
+          <div>
+            <span>Model</span>
+            <strong id="model">-</strong>
+          </div>
+          <div>
+            <span>Characters</span>
+            <strong id="characters">-</strong>
+          </div>
+        </div>
+
+        <article class="result-block">
+          <h3>250-Word Summary</h3>
+          <p id="tldr"></p>
+        </article>
+
+        <article class="result-block">
+          <h3>Important Points</h3>
+          <ul id="bullets"></ul>
+        </article>
+
+        <article class="result-block">
+          <h3>Key Timestamps</h3>
+          <div id="timestamps" class="timestamps"></div>
+        </article>
+      </section>
+
+      <section id="about" class="content-section">
+        <div class="section-heading">
+          <p class="eyebrow">How It Works</p>
+          <h2>Built for quick revision, not transcript overload</h2>
+          <p>
+            Luminote turns long YouTube lectures into readable notes with a local backend, caption retrieval fallbacks, and a lightweight
+            summarization pipeline that stays simple enough for a normal laptop.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <div>
+            <span>01</span>
+            <h3>Transcript Extraction</h3>
+            <p>Automatically reads available YouTube captions using a free transcript library.</p>
+          </div>
+          <div>
+            <span>02</span>
+            <h3>AI Summary</h3>
+            <p>Creates a readable summary, important points, and timestamp highlights from the transcript.</p>
+          </div>
+          <div>
+            <span>03</span>
+            <h3>Fallback Ready</h3>
+            <p>If captions are missing, the project can be extended with local Whisper transcription.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="creators" class="content-section creators-section">
+        <div class="section-heading">
+          <p class="eyebrow">Creators</p>
+          <h2>Project Team</h2>
+          <p>The current build focuses on a clean local workflow, fast summaries, and a simple interface for study notes.</p>
+        </div>
+        <div class="creator-list">
+          <div>
+            <span class="avatar">S1</span>
+            <h3>Rudrakshi Dadwal</h3>
+            <p>Backend and UI Design</p>
+          </div>
+          <div>
+            <span class="avatar">S2</span>
+            <h3>Kashish Rawat</h3>
+            <p>Frontend and AI Integration</p>
+          </div>
+          <div>
+            <span class="avatar">S3</span>
+            <h3>STUDENT 3 </h3>
+            <p>Testing and Documentation</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Luminote Summarizer</span>
+      <span>Built with FastAPI, JavaScript, and free AI tools</span>
+    </footer>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
