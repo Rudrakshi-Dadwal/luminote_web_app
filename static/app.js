@@ -49,7 +49,7 @@ form.addEventListener("submit", async (event) => {
     console.log("Sending request to:", `${API_BASE}/api/summarize`);
     console.log("Payload:", payload);
 
-    const response = await fetch(`${API_BASE}/api/summarize`, {
+    const response = await fetchApi("/api/summarize", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -76,7 +76,7 @@ form.addEventListener("submit", async (event) => {
     if (error.name === "AbortError") {
       setStatus("Request timed out (90 seconds). The server may be processing a large transcript. Try again, or switch to extractive mode in .env for faster results.", true);
     } else if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError")) {
-      setStatus(`Failed to connect to server at ${API_BASE}. Ensure the FastAPI backend is running on port 8000.`, true);
+      setStatus(`Failed to connect to server. Ensure the FastAPI backend is running on port 8000.`, true);
       console.error("Network error - backend not running?", error);
     } else {
       setStatus(error.message || "An error occurred. Check the browser console and server logs.", true);
@@ -168,27 +168,39 @@ function resolveApiBase() {
   const protocol = window.location.protocol;
   const origin = window.location.origin;
 
-  // Primary: If served from FastAPI backend directly (http://localhost:8000)
+  // Primary: If served from FastAPI backend directly (http://localhost:8000 or same port with backend)
   if (host === "127.0.0.1:8000" || host === "localhost:8000" || host.includes(":8000")) {
     console.log("✅ Running from FastAPI backend at", origin);
     return origin;
   }
 
-  // Secondary: If running from Live Server (http://localhost:5500)
+  // If served from Live Server or file protocol, assume backend is on 8000.
   if (protocol === "http:" && (host === "127.0.0.1:5500" || host === "localhost:5500")) {
     console.log("ℹ️ Running from Live Server, connecting to backend at http://127.0.0.1:8000");
     return "http://127.0.0.1:8000";
   }
 
-  // Tertiary: If opened as file:// or any other protocol
   if (protocol === "file:") {
     console.log("ℹ️ Running from file protocol, connecting to backend at http://127.0.0.1:8000");
     return "http://127.0.0.1:8000";
   }
 
-  // Default: Assume backend is on same host
+  // Default: Assume backend is on same host, otherwise fallback to 8000
   console.warn(`⚠️ Unusual host '${host}'. Trying current origin first, fallback to http://127.0.0.1:8000`);
   return origin || "http://127.0.0.1:8000";
+}
+
+async function fetchApi(path, options) {
+  let response = await fetch(`${API_BASE}${path}`, options);
+
+  // If the page is on port 5500 and the first request hits the static file server,
+  // retry the request against the backend on port 8000.
+  if (!response.ok && API_BASE.includes(":5500")) {
+    console.warn("⚠️ Primary API call failed on port 5500, retrying on port 8000");
+    response = await fetch(`http://127.0.0.1:8000${path}`, options);
+  }
+
+  return response;
 }
 
 function countWords(text) {
