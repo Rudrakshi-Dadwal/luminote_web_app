@@ -7,13 +7,11 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.models import SummarizeRequest, SummarizeResponse
-from app.summarizer import SummarizationUnavailableError, summarize_transcript
-from app.transcript import TranscriptUnavailableError, fetch_transcript
+from app.config.settings import settings
+from app.routes.summarize import router as summarize_router
 
 
 load_dotenv()
@@ -25,9 +23,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("luminote")
 
 app = FastAPI(
-    title="Free YouTube Video Summarizer",
-    description="A local-first YouTube transcript summarizer using free tools.",
-    version="1.0.0",
+    title="Luminote - YouTube AI Summarizer",
+    description="A production-ready YouTube transcript summarizer using free tools.",
+    version="2.0.0",
 )
 
 app.add_middleware(
@@ -39,6 +37,9 @@ app.add_middleware(
 )
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# Include routers
+app.include_router(summarize_router)
 
 
 @app.exception_handler(RequestValidationError)
@@ -54,8 +55,8 @@ async def validation_exception_handler(_: Request, exc: RequestValidationError) 
     )
 
 
-@app.exception_handler(StarletteHTTPException)
-async def http_exception_handler(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+@app.exception_handler(HTTPException)
+async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
     detail = exc.detail
     if isinstance(detail, dict):
         payload = {"detail": detail}
@@ -73,87 +74,21 @@ async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONRespons
     )
 
 
-@app.get("/", response_class=FileResponse)
-@app.get("/index.html", response_class=FileResponse)
-def index() -> FileResponse:
-    """Serve the main index.html file"""
-    index_file = STATIC_DIR / "index.html"
-    if not index_file.exists():
-        raise HTTPException(status_code=404, detail={"message": "index.html not found"})
-    return FileResponse(index_file)
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup."""
+    logger.info("Starting Luminote server...")
+    # Services will initialize lazily when first used
 
 
-@app.get("/health")
-def health() -> dict:
-    return {"status": "ok"}
-
-
-@app.get("/api/health")
-def api_health() -> dict:
-    return {"status": "ok"}
-
-
-@app.post("/api/summarize", response_model=SummarizeResponse)
-async def summarize(request: SummarizeRequest) -> SummarizeResponse:
-    """Summarize a YouTube video from its transcript.
-    
-    Args:
-        request: Contains YouTube URL and preferred language
-        
-    Returns:
-        SummarizeResponse with video summary, bullets, timestamps
-    """
-    logger.info(f"Summarizing video: {request.url[:50]}...")
-    
-    try:
-        if not request.url or len(request.url.strip()) < 8:
-            raise ValueError("Please provide a valid YouTube URL")
-            
-        transcript = fetch_transcript(request.url, language=request.language)
-        logger.info(f"Transcript retrieved for {transcript.video_id}")
-        
-        summary = summarize_transcript(transcript.segments)
-        logger.info(f"Summary generated for {transcript.video_id}")
-        
-    except ValueError as exc:
-        logger.warning(f"Validation error: {str(exc)}")
-        raise HTTPException(
-            status_code=400,
-            detail={"message": str(exc)},
-        ) from exc
-    except TranscriptUnavailableError as exc:
-        logger.warning(f"Transcript unavailable for {request.url}: {str(exc)}")
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "message": str(exc),
-                "fallback": "Choose a public video with captions, try another language, or add a local audio transcription fallback.",
-            },
-        ) from exc
-    except SummarizationUnavailableError as exc:
-        logger.warning(f"Summarization unavailable: {str(exc)}")
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "message": str(exc),
-                "fallback": "Switch to extractive mode in .env if your laptop cannot load the local Hugging Face model.",
-            },
-        ) from exc
-    except Exception as exc:
-        logger.exception(f"Unexpected error summarizing {request.url}")
-        raise HTTPException(
-            status_code=500,
-            detail={"message": "An unexpected error occurred. Please check the server logs."},
-        ) from exc
-
-    return SummarizeResponse(
-        video_id=transcript.video_id,
-        language=transcript.language,
-        transcript_source=transcript.source,
-        model_used=summary["model_used"],
-        tldr=summary["tldr"],
-        bullets=summary["bullets"],
-        timestamps=summary["timestamps"],
-        transcript_characters=len(transcript.full_text),
-        fallback_suggestion=None,
+if __name__ == "__main__":
+    import os
+    import uvicorn
+    port = int(os.getenv("PORT", settings.port))
+    uvicorn.run(
+        "app.main:app",
+        host=settings.host,
+        port=port,
+        reload=settings.debug,
+        log_level="info",
     )
