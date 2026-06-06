@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,13 +13,13 @@ from app.config.settings import settings
 from app.routes.summarize import router as summarize_router
 
 
-load_dotenv()
-
 ROOT_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT_DIR / "static"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("luminote")
+
+CORS_ORIGINS = ["*"]
 
 app = FastAPI(
     title="Luminote - YouTube AI Summarizer",
@@ -30,25 +29,37 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Accept"],
 )
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
-# Include routers
 app.include_router(summarize_router)
+
+
+@app.get("/")
+async def root() -> dict[str, str]:
+    return {
+        "app": "Luminote",
+        "status": "running",
+    }
 
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+    message = "Invalid request body."
+    for error in exc.errors():
+        if "url" in error.get("loc", ()):
+            message = "Invalid YouTube URL. Paste a youtube.com or youtu.be video URL."
+            break
+
     return JSONResponse(
         status_code=422,
         content={
             "detail": {
-                "message": "Invalid request body.",
+                "message": message,
                 "errors": exc.errors(),
             }
         },
@@ -74,21 +85,32 @@ async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONRespons
     )
 
 
+@app.get("/health")
+async def health_check() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/api/health")
+async def api_health_check() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 @app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup."""
+async def startup_event() -> None:
+    """Validate configuration and initialize services on startup."""
     logger.info("Starting Luminote server...")
-    # Services will initialize lazily when first used
+    logger.info("CORS Origins: %s", CORS_ORIGINS)
+    for warning in settings.validate():
+        logger.warning("Configuration warning: %s", warning)
 
 
 if __name__ == "__main__":
-    import os
     import uvicorn
-    port = int(os.getenv("PORT", settings.port))
+
     uvicorn.run(
         "app.main:app",
         host=settings.host,
-        port=port,
+        port=settings.port,
         reload=settings.debug,
         log_level="info",
     )

@@ -1,47 +1,99 @@
 from __future__ import annotations
 
+import logging
 import re
-from urllib.parse import parse_qs, urlparse
-from typing import List
+from urllib.parse import parse_qs, urlparse, urlunparse
+from typing import List, Tuple, Optional
 
+logger = logging.getLogger(__name__)
 
 YOUTUBE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
 
 def extract_video_id(value: str) -> str:
-    """Extract YouTube video ID from various URL formats."""
+    """
+    Extract YouTube video ID from various URL formats.
+    
+    Supports:
+    - Direct video IDs: abc123def45
+    - youtube.com/watch?v=ID
+    - youtu.be/ID
+    - youtu.be/?v=ID
+    - youtube.com/shorts/ID
+    - youtube.com/embed/ID
+    - youtube.com/live/ID
+    - URLs with timestamps: &t=45s
+    - URLs with query params: &list=...
+    """
+    if not value:
+        raise ValueError("URL cannot be empty")
+    
     candidate = value.strip()
+    logger.debug(f"Extracting video ID from: {candidate[:100]}")
+    
+    # Check if it's already a valid video ID
     if YOUTUBE_ID_PATTERN.match(candidate):
+        logger.debug(f"Input is a valid video ID: {candidate}")
         return candidate
-
-    parsed = urlparse(candidate)
-
-    # youtu.be short links
-    if parsed.hostname in {"youtu.be", "www.youtu.be"}:
+    
+    # Normalize URL: add protocol if missing
+    if not candidate.startswith(("http://", "https://")):
+        candidate = f"https://{candidate}"
+    
+    try:
+        parsed = urlparse(candidate)
+    except Exception as e:
+        logger.error(f"URL parsing failed: {e}")
+        raise ValueError("Invalid URL format")
+    
+    hostname = parsed.hostname or ""
+    
+    # youtu.be short links (various formats)
+    if "youtu.be" in hostname:
+        logger.debug(f"Detected youtu.be short link")
+        # Try path first: youtu.be/ID
         video_id = parsed.path.strip("/").split("/")[0]
         if YOUTUBE_ID_PATTERN.match(video_id):
+            logger.debug(f"Extracted from path: {video_id}")
             return video_id
-
+        
+        # Try query parameter: youtu.be/?v=ID
+        video_id = parse_qs(parsed.query).get("v", [""])[0]
+        if YOUTUBE_ID_PATTERN.match(video_id):
+            logger.debug(f"Extracted from query param: {video_id}")
+            return video_id
+    
     # youtube.com variants
-    if parsed.hostname and "youtube.com" in parsed.hostname:
-        if parsed.path == "/watch":
+    if "youtube.com" in hostname:
+        logger.debug(f"Detected youtube.com URL")
+        
+        # Standard watch URL: youtube.com/watch?v=ID&t=...
+        if "watch" in parsed.path or "watch" in parsed.query:
             video_id = parse_qs(parsed.query).get("v", [""])[0]
             if YOUTUBE_ID_PATTERN.match(video_id):
+                logger.debug(f"Extracted from /watch query: {video_id}")
                 return video_id
-
+        
+        # Shorts, embed, live: youtube.com/shorts/ID
         path_parts = [part for part in parsed.path.split("/") if part]
-        if path_parts and path_parts[0] in {"shorts", "embed", "live"}:
-            video_id = path_parts[1] if len(path_parts) > 1 else ""
+        if len(path_parts) >= 2 and path_parts[0] in {"shorts", "embed", "live"}:
+            video_id = path_parts[1]
             if YOUTUBE_ID_PATTERN.match(video_id):
+                logger.debug(f"Extracted from /{path_parts[0]}: {video_id}")
                 return video_id
-
-        # Handle playlist URLs - extract first video if possible
-        if path_parts and path_parts[0] == "playlist":
-            # For playlists, we can't easily get a single video ID without API
-            # Return error for now
-            pass
-
-    raise ValueError("Please enter a valid YouTube URL or 11-character video ID.")
+        
+        # Fallback: try first path segment if it's a valid ID
+        if path_parts and YOUTUBE_ID_PATTERN.match(path_parts[0]):
+            logger.debug(f"Extracted from first path segment: {path_parts[0]}")
+            return path_parts[0]
+    
+    logger.error(f"Could not extract video ID from: {candidate[:100]}")
+    raise ValueError(
+        "Invalid YouTube URL. Please provide:\n"
+        "- A YouTube URL (youtube.com/watch?v=...)\n"
+        "- A short URL (youtu.be/...)\n"
+        "- A video ID (11 characters)"
+    )
 
 
 def format_timestamp(seconds: float) -> str:

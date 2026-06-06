@@ -19,7 +19,6 @@ from youtube_transcript_api._errors import (
     NoTranscriptFound,
     TranscriptsDisabled,
     VideoUnavailable,
-    YouTubeTranscriptApiException,
 )
 
 from app.config.settings import settings

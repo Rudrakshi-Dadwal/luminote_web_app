@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import os
 import re
 from collections import Counter
 
+from app.config.settings import settings
 from app.transcript import TranscriptSegment
 from app.utils import clean_text, format_timestamp
 
@@ -31,8 +31,7 @@ class SummarizationUnavailableError(RuntimeError):
 
 
 def summarize_transcript(segments: list[TranscriptSegment]) -> dict:
-    max_chars = int(os.getenv("MAX_TRANSCRIPT_CHARS", "18000"))
-    text = _build_extractive_source(segments, max_chars=max_chars)
+    text = _build_extractive_source(segments, max_chars=settings.max_transcript_chars)
 
     windows = _rank_windows(text)
     tldr = _build_tldr(text, windows)

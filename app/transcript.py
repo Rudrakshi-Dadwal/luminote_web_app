@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import logging
-import os
 import re
 import shutil
 import tempfile
@@ -21,6 +20,7 @@ from youtube_transcript_api._errors import (
     VideoUnavailable,
 )
 
+from app.config.settings import settings
 from app.utils import clean_text, extract_video_id
 
 
@@ -144,14 +144,16 @@ def _build_ytdlp_attempts() -> list[dict]:
     }
 
     attempts = [base_options.copy()]
-    cookie_file = os.getenv("YTDLP_COOKIE_FILE", "").strip()
-    if cookie_file:
+    if settings.ytdlp_cookie_file:
         option = base_options.copy()
-        option["cookiefile"] = cookie_file
+        option["cookiefile"] = settings.ytdlp_cookie_file
         attempts.append(option)
 
-    browser_env = os.getenv("YTDLP_COOKIES_FROM_BROWSER", "").strip()
-    browsers = [browser_env] if browser_env else ["chrome", "edge", "brave", "firefox"]
+    browsers = (
+        [settings.ytdlp_cookies_from_browser]
+        if settings.ytdlp_cookies_from_browser
+        else ["chrome", "edge", "brave", "firefox"]
+    )
     for browser in browsers:
         if not browser:
             continue
@@ -174,7 +176,7 @@ def _build_ytdlp_attempts() -> list[dict]:
 
 
 def _transcribe_with_whisper(video_id: str, language: str):
-    if os.getenv("ENABLE_WHISPER_FALLBACK", "true").strip().lower() not in {"1", "true", "yes", "on"}:
+    if not settings.enable_whisper_fallback:
         return None
 
     if not shutil.which("ffmpeg"):
@@ -188,7 +190,7 @@ def _transcribe_with_whisper(video_id: str, language: str):
         logger.warning("Whisper fallback dependencies unavailable for %s: %s", video_id, exc)
         return None
 
-    model_name = os.getenv("WHISPER_MODEL", "tiny")
+    model_name = settings.whisper_model
     video_url = f"https://www.youtube.com/watch?v={video_id}"
 
     with tempfile.TemporaryDirectory(prefix="luminote_whisper_") as temp_dir:

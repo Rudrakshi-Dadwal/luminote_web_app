@@ -15,6 +15,10 @@ from app.utils import clean_transcript, clean_text, format_timestamp, is_lyric_o
 logger = logging.getLogger(__name__)
 
 
+class GeminiServiceError(RuntimeError):
+    pass
+
+
 class SummarizationService:
     def __init__(self):
         genai.configure(api_key=settings.gemini_api_key)
@@ -130,23 +134,15 @@ class SummarizationService:
             "SUMMARY:\n"
         )
 
-        try:
-            response = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: self.model.generate_content(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.15,
-                        max_output_tokens=450,
-                        top_p=0.9,
-                    ),
-                ),
-            )
-            result = response.text.strip()
-            return result or "Summary generation failed."
-        except Exception as exc:
-            logger.error("Gemini summarization failed: %s", exc)
-            return "Summary generation failed."
+        response = await self._generate_with_retry(
+            prompt,
+            max_output_tokens=450,
+            operation="Gemini summarization",
+        )
+        result = getattr(response, "text", "").strip()
+        if not result:
+            raise GeminiServiceError("Gemini returned an empty summary.")
+        return result
 
     async def _generate_bullets_gemini(self, text: str) -> List[str]:
         """Generate 3-5 meaningful bullet points from the transcript."""
@@ -158,25 +154,38 @@ class SummarizationService:
             "KEY POINTS:\n"
         )
 
-        try:
-            response = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: self.model.generate_content(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.15,
-                        max_output_tokens=220,
-                        top_p=0.9,
+        response = await self._generate_with_retry(
+            prompt,
+            max_output_tokens=220,
+            operation="Gemini bullet generation",
+        )
+        bullets = self._parse_bullet_lines(getattr(response, "text", ""))
+        if len(bullets) >= 3:
+            return bullets[:5]
+        return self._fallback_bullets(text)
+
+    async def _generate_with_retry(self, prompt: str, *, max_output_tokens: int, operation: str):
+        last_error: Exception | None = None
+        for attempt in range(2):
+            try:
+                return await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self.model.generate_content(
+                        prompt,
+                        generation_config=genai.types.GenerationConfig(
+                            temperature=0.15,
+                            max_output_tokens=max_output_tokens,
+                            top_p=0.9,
+                        ),
                     ),
-                ),
-            )
-            bullets = self._parse_bullet_lines(response.text)
-            if len(bullets) >= 3:
-                return bullets[:5]
-            return self._fallback_bullets(text)
-        except Exception as exc:
-            logger.error("Gemini bullet generation failed: %s", exc)
-            return self._fallback_bullets(text)
+                )
+            except Exception as exc:
+                last_error = exc
+                logger.warning("%s failed on attempt %s/2: %s", operation, attempt + 1, exc)
+                if attempt == 0:
+                    await asyncio.sleep(1)
+
+        raise GeminiServiceError(f"{operation} failed after retry: {last_error}") from last_error
 
     def _parse_bullet_lines(self, text: str) -> List[str]:
         """Extract clean bullet lines from Gemini output."""
@@ -192,8 +201,9 @@ class SummarizationService:
                 continue
             if bullet.lower().startswith("summary"):
                 continue
+            bullet = self._limit_words(bullet.rstrip(". "), 32)
             if bullet not in bullets:
-                bullets.append(bullet.rstrip(". "))
+                bullets.append(bullet)
 
         return bullets
 
@@ -207,7 +217,7 @@ class SummarizationService:
                 continue
             if sentence.lower().startswith("this transcript"):
                 continue
-            summary_line = sentence.rstrip(".;")
+            summary_line = self._limit_words(sentence.rstrip(".;"), 32)
             if summary_line not in bullets:
                 bullets.append(summary_line)
             if len(bullets) >= limit:
@@ -221,6 +231,12 @@ class SummarizationService:
             ]
 
         return bullets
+
+    def _limit_words(self, text: str, max_words: int) -> str:
+        words = clean_text(text).split()
+        if len(words) <= max_words:
+            return " ".join(words).rstrip(". ")
+        return " ".join(words[:max_words]).rstrip(". ") + "..."
 
     def _format_output(self, summary_text: str, bullets: List[str], music_warning: bool) -> str:
         """Format the final response in a professional summary structure."""
